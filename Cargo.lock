@@ -5,7 +5,3 @@ version = 3
 [[package]]
 name = "rustaphone"
 version = "0.1.0"
-
-[[package]]
-name = "rustaphone-cli"
-version = "0.1.0"

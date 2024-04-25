@@ -1,3 +1,5 @@
+mod internal;
+
 pub struct Rustaphone {
     tempo: u32,
 }
@@ -10,57 +12,6 @@ impl Rustaphone {
     pub fn play(&self) {
         println!("Playing at {} bpm", self.tempo);
     }
-}
-
-enum Waveform {
-    Sine,
-    Square,
-    Sawtooth,
-    Noise,
-}
-
-struct Sound {
-    waveform: Waveform,
-
-    pan: u8,
-    volume: f64,
-    punch: f64,
-    attack: f64,
-    sustain: f64,
-    decay: f64,
-
-    // pitch
-    freq: f64,
-    limit: f64,
-    slide: f64,
-    dslide: f64,
-
-    // square wave
-    square: f64,
-    sweep: f64,
-
-    // vibrato
-    vibe: f64,
-    vspeed: f64,
-    vdelay: f64,
-
-    // hi-pass, lo-pass
-    lpf: f64,
-    lsweep: f64,
-    resonance: f64,
-    hpf: f64,
-    hsweep: f64,
-
-    // arpeggiator
-    arp: f64,
-    aspeed: f64,
-
-    // phaser
-    phase: f64,
-    psweep: f64,
-
-    // repeats?
-    repeat: f64,
 }
 
 impl Sound {
