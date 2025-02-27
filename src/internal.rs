@@ -14,7 +14,7 @@ pub(super) enum State {
     Play,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub(super) enum Waveform {
     Square,
     Sawtooth,
@@ -130,8 +130,8 @@ pub(super) struct Sound {
 
 pub(super) struct Fx {
     command: FxCommand,
-    val: f64,
-    r#mod: u8,
+    val: f32,
+    r#mod: char,
 }
 
 pub(super) struct Note {
@@ -139,6 +139,157 @@ pub(super) struct Note {
     octave: u8,
     duration: u8,
     fx: Vec<Fx>,
+}
+
+impl Note {
+    fn freq(&self) -> f32 {
+        match self.tone as char {
+            'A' =>
+            // A
+            {
+                match self.octave {
+                    1 => 0.121,
+                    2 => 0.175,
+                    3 => 0.248,
+                    4 => 0.353,
+                    5 => 0.500,
+                    _ => 0.0,
+                }
+            }
+
+            'b' =>
+            // A# or Bb
+            {
+                match self.octave {
+                    1 => 0.125,
+                    2 => 0.181,
+                    3 => 0.255,
+                    4 => 0.364,
+                    5 => 0.516,
+                    _ => 0.0,
+                }
+            }
+            'B' =>
+            // B
+            {
+                match self.octave {
+                    1 => 0.129,
+                    2 => 0.187,
+                    3 => 0.263,
+                    4 => 0.374,
+                    5 => 0.528,
+                    _ => 0.0,
+                }
+            }
+
+            'C' =>
+            // C
+            {
+                match self.octave {
+                    2 => 0.133,
+                    3 => 0.192,
+                    4 => 0.271,
+                    5 => 0.385,
+                    6 => 0.544,
+                    _ => 0.0,
+                }
+            }
+            'd' =>
+            // C# or Db
+            {
+                match self.octave {
+                    2 => 0.138,
+                    3 => 0.198,
+                    4 => 0.279,
+                    5 => 0.395,
+                    6 => 0.559,
+                    _ => 0.0,
+                }
+            }
+            'D' =>
+            // D
+            {
+                match self.octave {
+                    2 => 0.143,
+                    3 => 0.202,
+                    4 => 0.287,
+                    5 => 0.406,
+                    6 => 0.575,
+                    _ => 0.0,
+                }
+            }
+            'e' =>
+            // D# or Eb
+            {
+                match self.octave {
+                    2 => 0.148,
+                    3 => 0.208,
+                    4 => 0.296,
+                    5 => 0.418,
+                    6 => 0.593,
+                    _ => 0.0,
+                }
+            }
+            'E' =>
+            // E
+            {
+                match self.octave {
+                    2 => 0.152,
+                    3 => 0.214,
+                    4 => 0.305,
+                    5 => 0.429,
+                    6 => 0.608,
+                    _ => 0.0,
+                }
+            }
+            'F' =>
+            // F
+            {
+                match self.octave {
+                    2 => 0.155,
+                    3 => 0.220,
+                    4 => 0.314,
+                    5 => 0.441,
+                    _ => 0.0,
+                }
+            }
+            'g' =>
+            // F# or Gb
+            {
+                match self.octave {
+                    2 => 0.160,
+                    3 => 0.227,
+                    4 => 0.323,
+                    5 => 0.454,
+                    _ => 0.0,
+                }
+            }
+            'G' =>
+            // G
+            {
+                match self.octave {
+                    2 => 0.164,
+                    3 => 0.234,
+                    4 => 0.332,
+                    5 => 0.468,
+                    _ => 0.0,
+                }
+            }
+            'a' =>
+            // G# or Ab
+            {
+                match self.octave {
+                    1 => 0.117,
+                    2 => 0.170,
+                    3 => 0.242,
+                    4 => 0.343,
+                    5 => 0.485,
+                    _ => 0.0,
+                }
+            }
+            _ => 0.0,
+        }
+    }
 }
 
 pub(super) struct Track {
@@ -258,7 +409,7 @@ impl Voice {
         self.phasex = 0;
 
         self.phaser = Default::default();
-        self.noise = rand::random::<[f32; 32]>().map(|r| 2.0 * r - 1.0); // array of random f32s
+        self.noise = rand::random::<[f32; 32]>().map(|r| 2.0 * r - 1.0); // array of random f32s // TODO: verify this is actually the same as the C version
 
         self.repeat = 0;
         let limit = (f32::powf(1.0 - self.params.repeat, 2.0) * 20000.0 + 32.0) as i32;
@@ -348,6 +499,24 @@ pub struct StopHandle {
     channel: usize,
 }
 
+macro_rules! fx {
+    ($f:ident, $a:ident, $v:ident) => {{
+        if $f.r#mod == '+' {
+            $a.params.$v += $f.val;
+        } else if $f.r#mod == '-' {
+            $a.params.$v -= $f.val;
+        } else {
+            $a.params.$v = $f.val;
+        }
+
+        if $a.params.$v > 1.0 {
+            $a.params.$v = 1.0;
+        } else if $a.params.$v < 0.0 {
+            $a.params.$v = 0.0;
+        }
+    }};
+}
+
 pub(super) struct Mix {
     channels: [Option<Rustaphone>; MAX_CHANNELS],
 }
@@ -382,7 +551,7 @@ impl Mix {
         self.is_done()
     }
 
-    fn is_done(&self) -> bool {
+    pub fn is_done(&self) -> bool {
         self.channels.iter().all(|channel| {
             if let Some(channel) = channel {
                 channel.is_done()
@@ -390,5 +559,243 @@ impl Mix {
                 true
             }
         })
+    }
+
+    pub fn synth(&mut self, sample_rate: usize, buffer: &mut [f32]) {
+        for i in 0..buffer.len() {
+            let mut allsample = 0.0;
+
+            // TODO: rename `bi` to `channel`
+            for bi in 0..MAX_CHANNELS {
+                let mut moreframes = 0;
+
+                let Some(b) = &mut self.channels[bi] else {
+                    continue;
+                };
+
+                for t in 0..MAX_TRACKS {
+                    let Some(a) = &mut b.voices[t] else {
+                        continue;
+                    };
+
+                    let Some(track) = a.track.clone() else {
+                        continue;
+                    };
+                    let track = track.lock().unwrap();
+
+                    if !track.notes.is_empty() {
+                        if a.frames == a.nextnote[0] {
+                            if a.nextnote[1] < track.nlen {
+                                let note = &track.notes[a.nextnote[1] as usize];
+                                let mut freq = a.params.freq;
+                                if note.tone as char != 'n' {
+                                    freq = note.freq();
+                                }
+                                if freq == 0.0 {
+                                    a.period = 0.0;
+                                    a.state = State::Stop;
+                                } else {
+                                    let note = &track.notes[a.nextnote[1] as usize];
+                                    for fx in &note.fx {
+                                        match fx.command {
+                                            FxCommand::Volume => fx!(fx, a, volume),
+                                            FxCommand::Punch => fx!(fx, a, punch),
+                                            FxCommand::Attack => fx!(fx, a, attack),
+                                            FxCommand::Sustain => fx!(fx, a, sustain),
+                                            FxCommand::Decay => fx!(fx, a, decay),
+                                            FxCommand::Square => fx!(fx, a, square),
+                                            FxCommand::Sweep => fx!(fx, a, sweep),
+                                            FxCommand::Vibe => fx!(fx, a, vibe),
+                                            FxCommand::VSpeed => fx!(fx, a, vspeed),
+                                            FxCommand::VDelay => fx!(fx, a, vdelay),
+                                            FxCommand::Lpf => fx!(fx, a, lpf),
+                                            FxCommand::LSweep => fx!(fx, a, lsweep),
+                                            FxCommand::Resonance => fx!(fx, a, resonance),
+                                            FxCommand::Hpf => fx!(fx, a, hpf),
+                                            FxCommand::HSweep => fx!(fx, a, hsweep),
+                                            FxCommand::Arp => fx!(fx, a, arp),
+                                            FxCommand::ASpeed => fx!(fx, a, aspeed),
+                                            FxCommand::Phase => fx!(fx, a, phase),
+                                            FxCommand::PSweep => fx!(fx, a, psweep),
+                                            FxCommand::Repeat => fx!(fx, a, repeat),
+                                        }
+                                    }
+
+                                    a.reset();
+                                    a.start();
+                                    a.period = 100.0 / (freq * freq + 0.001) as f64;
+                                }
+
+                                a.nextnote[0] += (sample_rate as f32 / (b.tempo as f32 / 60.0)
+                                    * (4.0 / note.duration as f32))
+                                    as i32;
+                            }
+
+                            a.nextnote[1] += 1;
+                        }
+                        if a.nextnote[1] <= track.nlen {
+                            moreframes += 1;
+                        }
+                    } else {
+                        moreframes += 1;
+                    }
+
+                    a.frames += 1;
+
+                    if a.state == State::Stop {
+                        continue;
+                    }
+
+                    a.repeat += 1;
+                    if a.limit != 0 && a.repeat >= a.limit {
+                        a.repeat = 0;
+                        a.reset();
+                    }
+
+                    a.atime += 1;
+                    if a.alimit != 0 && a.atime >= a.alimit {
+                        a.alimit = 0;
+                        a.period *= a.arp;
+                    }
+
+                    a.slide += a.dslide;
+                    a.period *= a.slide;
+                    if a.period > a.maxperiod {
+                        a.period = a.maxperiod;
+                        if a.params.limit > 0.0 {
+                            a.state = State::Stop;
+                        }
+                    }
+
+                    let mut rfperiod = a.period as f32;
+                    if a.vdelay > 0.0 {
+                        a.vibe += a.vspeed;
+                        rfperiod = a.period as f32 * (1.0 + f32::sin(a.vibe) * a.vdelay);
+                    }
+
+                    let mut period = rfperiod as i32;
+                    if period < 8 {
+                        period = 8;
+                    }
+                    a.square += a.sweep;
+                    if a.square < 0.0 {
+                        a.square = 0.0;
+                    }
+                    if a.square > 0.5 {
+                        a.square = 0.5;
+                    }
+
+                    a.time += 1;
+                    while a.time >= a.length[a.stage as usize] {
+                        a.time = 0;
+                        a.stage += 1;
+                        if a.stage == 3 {
+                            a.state = State::Stop;
+                        }
+                    }
+
+                    match a.stage {
+                        0 => {
+                            a.volume = a.time as f32 / a.length[0] as f32;
+                        }
+                        1 => {
+                            a.volume = 1.0
+                                + (1.0 - a.time as f32 / a.length[1] as f32) * 2.0 * a.params.punch;
+                        }
+                        2 => {
+                            a.volume = 1.0 - a.time as f32 / a.length[2] as f32;
+                        }
+                        _ => {}
+                    }
+
+                    a.fphase += a.dphase;
+                    a.iphase = (a.fphase as i32).abs();
+                    if a.iphase > 1023 {
+                        a.iphase = 1023;
+                    }
+
+                    if a.filter[7] != 0.0 {
+                        a.filter[6] *= a.filter[7];
+                        if a.filter[6] < 0.00001 {
+                            a.filter[6] = 0.00001;
+                        }
+                        if a.filter[6] > 0.1 {
+                            a.filter[6] = 0.1;
+                        }
+                    }
+
+                    let mut ssample = 0.0;
+                    for _ in 0..8 {
+                        a.phase += 1;
+                        if a.phase >= period {
+                            a.phase %= period;
+                            if a.params.r#type == Waveform::Noise {
+                                for i in 0..32 {
+                                    a.noise[i] = rand::random::<f32>() * 2.0 - 1.0;
+                                    // TODO: verify this is actually the same as the C version.
+                                    // TODO: Init array without loop as above.
+                                }
+                            }
+                        }
+
+                        let fp = a.phase as f32 / period as f32;
+                        let mut sample = match a.params.r#type {
+                            Waveform::Square => {
+                                if fp < a.square {
+                                    0.5
+                                } else {
+                                    -0.5
+                                }
+                            }
+                            Waveform::Sawtooth => 1.0 - fp * 2.0,
+                            Waveform::Sine => f32::sin(fp * 2.0 * core::f32::consts::PI),
+                            Waveform::Noise => a.noise[(a.phase * 32 / period) as usize],
+                        };
+
+                        let pp = a.filter[0];
+                        a.filter[2] *= a.filter[3];
+                        if a.filter[2] < 0.0 {
+                            a.filter[2] = 0.0;
+                        }
+                        if a.filter[2] > 0.1 {
+                            a.filter[2] = 0.1;
+                        }
+                        if a.params.lpf != 1.0 {
+                            a.filter[1] += (sample - a.filter[0]) * a.filter[2];
+                            a.filter[1] -= a.filter[1] * a.filter[4];
+                        } else {
+                            a.filter[0] = sample;
+                            a.filter[1] = 0.0;
+                        }
+                        a.filter[0] += a.filter[1];
+
+                        a.filter[5] += a.filter[0] - pp;
+                        a.filter[5] -= a.filter[5] * a.filter[6];
+                        sample = a.filter[5];
+
+                        a.phaser.0[(a.phasex & 1023) as usize] = sample;
+                        sample += a.phaser.0[((a.phasex - a.iphase + 1024) & 1023) as usize];
+                        a.phasex = (a.phasex + 1) & 1023;
+
+                        ssample += sample * a.volume;
+                    }
+                    ssample = ssample / 8.0 * b.volume;
+                    ssample *= 2.0 * a.params.volume;
+
+                    if ssample > 1.0 {
+                        ssample = 1.0;
+                    }
+                    if ssample < -1.0 {
+                        ssample = -1.0;
+                    }
+                    allsample += ssample;
+                }
+                if moreframes == 0 {
+                    b.state = State::Stop;
+                }
+            }
+
+            buffer[i] = allsample;
+        }
     }
 }
