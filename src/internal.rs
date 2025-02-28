@@ -1,4 +1,9 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    str::FromStr,
+    sync::{Arc, Mutex},
+};
+
+mod notation;
 
 const HI_OCTAVE: u8 = 8;
 const MAX_TRACKS: usize = 64;
@@ -135,7 +140,7 @@ pub(super) struct Fx {
 }
 
 pub(super) struct Note {
-    tone: u8,
+    tone: char,
     octave: u8,
     duration: u8,
     fx: Vec<Fx>,
@@ -297,6 +302,14 @@ pub(super) struct Track {
     capa: i32,
     notes: Vec<Note>,
     params: Params,
+}
+
+impl FromStr for Track {
+    type Err = nom::error::Error<nom::error::ErrorKind>;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        todo!()
+    }
 }
 
 #[derive(Clone)]
