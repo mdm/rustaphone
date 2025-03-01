@@ -1,16 +1,9 @@
-use std::{
-    str::FromStr,
-    sync::{Arc, Mutex},
-};
-
 mod notation;
 
 const HI_OCTAVE: u8 = 8;
 const MAX_TRACKS: usize = 64;
-const MAX_CHANNELS: usize = 64;
 
 const UNUSED_VOICE: Option<Voice> = None;
-const UNUSED_CHANNEL: Option<Rustaphone> = None;
 
 #[derive(Clone, Default, PartialEq)]
 pub(super) enum State {
@@ -19,14 +12,7 @@ pub(super) enum State {
     Play,
 }
 
-#[derive(Clone, PartialEq)]
-pub(super) enum Waveform {
-    Square,
-    Sawtooth,
-    Sine,
-    Noise,
-}
-
+#[derive(Clone)]
 pub(super) enum FxCommand {
     Volume,
     Punch,
@@ -52,53 +38,53 @@ pub(super) enum FxCommand {
 
 #[derive(Clone)]
 pub(super) struct Params {
-    r#type: Waveform,
+    pub r#type: super::Waveform,
 
-    pan: u8,
-    volume: f32,
-    punch: f32,
-    attack: f32,
-    sustain: f32,
-    decay: f32,
+    pub pan: u8,
+    pub volume: f32,
+    pub punch: f32,
+    pub attack: f32,
+    pub sustain: f32,
+    pub decay: f32,
 
     // pitch
-    freq: f32,
-    limit: f32,
-    slide: f32,
-    dslide: f32,
+    pub freq: f32,
+    pub limit: f32,
+    pub slide: f32,
+    pub dslide: f32,
 
     // square wave
-    square: f32,
-    sweep: f32,
+    pub square: f32,
+    pub sweep: f32,
 
     // vibrato
-    vibe: f32,
-    vspeed: f32,
-    vdelay: f32,
+    pub vibe: f32,
+    pub vspeed: f32,
+    pub vdelay: f32,
 
     // hi-pass, lo-pass
-    lpf: f32,
-    lsweep: f32,
-    resonance: f32,
-    hpf: f32,
-    hsweep: f32,
+    pub lpf: f32,
+    pub lsweep: f32,
+    pub resonance: f32,
+    pub hpf: f32,
+    pub hsweep: f32,
 
     // arpeggiator
-    arp: f32,
-    aspeed: f32,
+    pub arp: f32,
+    pub aspeed: f32,
 
     // phaser
-    phase: f32,
-    psweep: f32,
+    pub phase: f32,
+    pub psweep: f32,
 
     // repeats?
-    repeat: f32,
+    pub repeat: f32,
 }
 
 impl Default for Params {
     fn default() -> Self {
         Self {
-            r#type: Waveform::Square,
+            r#type: super::Waveform::Square,
             pan: Default::default(),
             volume: 0.5,
             punch: Default::default(),
@@ -128,17 +114,32 @@ impl Default for Params {
     }
 }
 
-pub(super) struct Sound {
-    refcount: usize,
-    params: Params,
+macro_rules! fx {
+    ($f:ident, $a:ident, $v:ident) => {{
+        if $f.r#mod == '+' {
+            $a.params.$v += $f.val;
+        } else if $f.r#mod == '-' {
+            $a.params.$v -= $f.val;
+        } else {
+            $a.params.$v = $f.val;
+        }
+
+        if $a.params.$v > 1.0 {
+            $a.params.$v = 1.0;
+        } else if $a.params.$v < 0.0 {
+            $a.params.$v = 0.0;
+        }
+    }};
 }
 
+#[derive(Clone)]
 pub(super) struct Fx {
     command: FxCommand,
     val: f32,
     r#mod: char,
 }
 
+#[derive(Clone)]
 pub(super) struct Note {
     tone: char,
     octave: u8,
@@ -297,18 +298,18 @@ impl Note {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct Track {
-    nlen: i32,
-    capa: i32,
     notes: Vec<Note>,
     params: Params,
 }
 
-impl FromStr for Track {
-    type Err = nom::error::Error<nom::error::ErrorKind>;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        todo!()
+impl Track {
+    pub fn new(instrument: super::Instrument, tune: &str) -> Self {
+        Track {
+            notes: notation::tune(tune).unwrap().1,
+            params: instrument.params,
+        }
     }
 }
 
@@ -323,7 +324,7 @@ impl Default for Phaser {
 
 #[derive(Clone, Default)]
 pub(super) struct Voice {
-    track: Option<Arc<Mutex<Track>>>,
+    track: Option<Track>,
     params: Params,
     frames: i32,
     nextnote: [i32; 2],
@@ -432,7 +433,7 @@ impl Voice {
 }
 
 #[derive(Clone)]
-pub(super) struct Rustaphone {
+pub struct Rustaphone {
     tempo: i32,
     volume: f32,
     voices: [Option<Voice>; MAX_TRACKS],
@@ -440,13 +441,13 @@ pub(super) struct Rustaphone {
 }
 
 impl Rustaphone {
-    pub fn new() -> Arc<Mutex<Self>> {
-        Arc::new(Mutex::new(Rustaphone {
-            tempo: 120,
-            volume: 0.10,
+    pub fn new(tempo: i32, volume: f32) -> Self {
+        Rustaphone {
+            tempo,
+            volume,
             voices: [UNUSED_VOICE; MAX_TRACKS],
             state: State::Stop,
-        }))
+        }
     }
 
     pub fn clear(&mut self) {
@@ -463,7 +464,7 @@ impl Rustaphone {
         for i in 0..MAX_TRACKS {
             if let Some(voice) = &mut self.voices[i] {
                 if let Some(track) = &voice.track {
-                    voice.params = track.lock().unwrap().params.clone();
+                    voice.params = track.params.clone();
                     voice.reset();
                     voice.start();
                     voice.frames = 0;
@@ -483,11 +484,245 @@ impl Rustaphone {
         self.state == State::Stop
     }
 
-    fn set_track_at(&mut self, track: Option<Arc<Mutex<Track>>>, index: usize) {
+    pub fn add_track(&mut self, track: Track) {
+        for i in 0..MAX_TRACKS {
+            if self.voices[i].is_none() {
+                self.set_track_at(Some(track), i);
+                return;
+            }
+        }
+    }
+
+    pub fn synth(&mut self, sample_rate: usize, allsample: &mut f32) {
+        let mut moreframes = 0;
+
+        for t in 0..MAX_TRACKS {
+            let Some(a) = &mut self.voices[t] else {
+                continue;
+            };
+
+            let Some(track) = a.track.clone() else {
+                continue;
+            };
+
+            if !track.notes.is_empty() {
+                if a.frames == a.nextnote[0] {
+                    if a.nextnote[1] < track.notes.len() as i32 {
+                        let note = &track.notes[a.nextnote[1] as usize];
+                        let mut freq = a.params.freq;
+                        if note.tone as char != 'n' {
+                            freq = note.freq();
+                        }
+                        if freq == 0.0 {
+                            a.period = 0.0;
+                            a.state = State::Stop;
+                        } else {
+                            let note = &track.notes[a.nextnote[1] as usize];
+                            for fx in &note.fx {
+                                match fx.command {
+                                    FxCommand::Volume => fx!(fx, a, volume),
+                                    FxCommand::Punch => fx!(fx, a, punch),
+                                    FxCommand::Attack => fx!(fx, a, attack),
+                                    FxCommand::Sustain => fx!(fx, a, sustain),
+                                    FxCommand::Decay => fx!(fx, a, decay),
+                                    FxCommand::Square => fx!(fx, a, square),
+                                    FxCommand::Sweep => fx!(fx, a, sweep),
+                                    FxCommand::Vibe => fx!(fx, a, vibe),
+                                    FxCommand::VSpeed => fx!(fx, a, vspeed),
+                                    FxCommand::VDelay => fx!(fx, a, vdelay),
+                                    FxCommand::Lpf => fx!(fx, a, lpf),
+                                    FxCommand::LSweep => fx!(fx, a, lsweep),
+                                    FxCommand::Resonance => fx!(fx, a, resonance),
+                                    FxCommand::Hpf => fx!(fx, a, hpf),
+                                    FxCommand::HSweep => fx!(fx, a, hsweep),
+                                    FxCommand::Arp => fx!(fx, a, arp),
+                                    FxCommand::ASpeed => fx!(fx, a, aspeed),
+                                    FxCommand::Phase => fx!(fx, a, phase),
+                                    FxCommand::PSweep => fx!(fx, a, psweep),
+                                    FxCommand::Repeat => fx!(fx, a, repeat),
+                                }
+                            }
+
+                            a.reset();
+                            a.start();
+                            a.period = 100.0 / (freq * freq + 0.001) as f64;
+                        }
+
+                        a.nextnote[0] += (sample_rate as f32 / (self.tempo as f32 / 60.0)
+                            * (4.0 / note.duration as f32))
+                            as i32;
+                    }
+
+                    a.nextnote[1] += 1;
+                }
+                if a.nextnote[1] <= track.notes.len() as i32 {
+                    moreframes += 1;
+                }
+            } else {
+                moreframes += 1;
+            }
+
+            a.frames += 1;
+
+            if a.state == State::Stop {
+                continue;
+            }
+
+            a.repeat += 1;
+            if a.limit != 0 && a.repeat >= a.limit {
+                a.repeat = 0;
+                a.reset();
+            }
+
+            a.atime += 1;
+            if a.alimit != 0 && a.atime >= a.alimit {
+                a.alimit = 0;
+                a.period *= a.arp;
+            }
+
+            a.slide += a.dslide;
+            a.period *= a.slide;
+            if a.period > a.maxperiod {
+                a.period = a.maxperiod;
+                if a.params.limit > 0.0 {
+                    a.state = State::Stop;
+                }
+            }
+
+            let mut rfperiod = a.period as f32;
+            if a.vdelay > 0.0 {
+                a.vibe += a.vspeed;
+                rfperiod = a.period as f32 * (1.0 + f32::sin(a.vibe) * a.vdelay);
+            }
+
+            let mut period = rfperiod as i32;
+            if period < 8 {
+                period = 8;
+            }
+            a.square += a.sweep;
+            if a.square < 0.0 {
+                a.square = 0.0;
+            }
+            if a.square > 0.5 {
+                a.square = 0.5;
+            }
+
+            a.time += 1;
+            while a.time >= a.length[a.stage as usize] {
+                a.time = 0;
+                a.stage += 1;
+                if a.stage == 3 {
+                    a.state = State::Stop;
+                }
+            }
+
+            match a.stage {
+                0 => {
+                    a.volume = a.time as f32 / a.length[0] as f32;
+                }
+                1 => {
+                    a.volume =
+                        1.0 + (1.0 - a.time as f32 / a.length[1] as f32) * 2.0 * a.params.punch;
+                }
+                2 => {
+                    a.volume = 1.0 - a.time as f32 / a.length[2] as f32;
+                }
+                _ => {}
+            }
+
+            a.fphase += a.dphase;
+            a.iphase = (a.fphase as i32).abs();
+            if a.iphase > 1023 {
+                a.iphase = 1023;
+            }
+
+            if a.filter[7] != 0.0 {
+                a.filter[6] *= a.filter[7];
+                if a.filter[6] < 0.00001 {
+                    a.filter[6] = 0.00001;
+                }
+                if a.filter[6] > 0.1 {
+                    a.filter[6] = 0.1;
+                }
+            }
+
+            let mut ssample = 0.0;
+            for _ in 0..8 {
+                a.phase += 1;
+                if a.phase >= period {
+                    a.phase %= period;
+                    if a.params.r#type == super::Waveform::Noise {
+                        for i in 0..32 {
+                            a.noise[i] = rand::random::<f32>() * 2.0 - 1.0;
+                            // TODO: verify this is actually the same as the C version.
+                            // TODO: Init array without loop as above.
+                        }
+                    }
+                }
+
+                let fp = a.phase as f32 / period as f32;
+                let mut sample = match a.params.r#type {
+                    super::Waveform::Square => {
+                        if fp < a.square {
+                            0.5
+                        } else {
+                            -0.5
+                        }
+                    }
+                    super::Waveform::Sawtooth => 1.0 - fp * 2.0,
+                    super::Waveform::Sine => f32::sin(fp * 2.0 * core::f32::consts::PI),
+                    super::Waveform::Noise => a.noise[(a.phase * 32 / period) as usize],
+                };
+
+                let pp = a.filter[0];
+                a.filter[2] *= a.filter[3];
+                if a.filter[2] < 0.0 {
+                    a.filter[2] = 0.0;
+                }
+                if a.filter[2] > 0.1 {
+                    a.filter[2] = 0.1;
+                }
+                if a.params.lpf != 1.0 {
+                    a.filter[1] += (sample - a.filter[0]) * a.filter[2];
+                    a.filter[1] -= a.filter[1] * a.filter[4];
+                } else {
+                    a.filter[0] = sample;
+                    a.filter[1] = 0.0;
+                }
+                a.filter[0] += a.filter[1];
+
+                a.filter[5] += a.filter[0] - pp;
+                a.filter[5] -= a.filter[5] * a.filter[6];
+                sample = a.filter[5];
+
+                a.phaser.0[(a.phasex & 1023) as usize] = sample;
+                sample += a.phaser.0[((a.phasex - a.iphase + 1024) & 1023) as usize];
+                a.phasex = (a.phasex + 1) & 1023;
+
+                ssample += sample * a.volume;
+            }
+            ssample = ssample / 8.0 * self.volume;
+            ssample *= 2.0 * a.params.volume;
+
+            if ssample > 1.0 {
+                ssample = 1.0;
+            }
+            if ssample < -1.0 {
+                ssample = -1.0;
+            }
+            *allsample += ssample;
+        }
+
+        if moreframes == 0 {
+            self.state = State::Stop;
+        }
+    }
+
+    fn set_track_at(&mut self, track: Option<Track>, index: usize) {
         self.voices[index] = match self.voices[index].take() {
             Some(old_voice) => {
                 let params = match &track {
-                    Some(track) => track.lock().unwrap().params.clone(),
+                    Some(track) => track.params.clone(),
                     None => old_voice.params,
                 };
 
@@ -505,310 +740,5 @@ impl Rustaphone {
                 ..Default::default()
             }),
         };
-    }
-}
-
-pub struct StopHandle {
-    channel: usize,
-}
-
-macro_rules! fx {
-    ($f:ident, $a:ident, $v:ident) => {{
-        if $f.r#mod == '+' {
-            $a.params.$v += $f.val;
-        } else if $f.r#mod == '-' {
-            $a.params.$v -= $f.val;
-        } else {
-            $a.params.$v = $f.val;
-        }
-
-        if $a.params.$v > 1.0 {
-            $a.params.$v = 1.0;
-        } else if $a.params.$v < 0.0 {
-            $a.params.$v = 0.0;
-        }
-    }};
-}
-
-pub(super) struct Mix {
-    channels: [Option<Rustaphone>; MAX_CHANNELS],
-}
-
-impl Mix {
-    pub fn new() -> Self {
-        Mix {
-            channels: [UNUSED_CHANNEL; MAX_CHANNELS],
-        }
-    }
-
-    pub fn play(&mut self, mut rustaphone: Rustaphone) -> Option<StopHandle> {
-        rustaphone.play();
-
-        for i in 0..MAX_CHANNELS {
-            match &self.channels[i] {
-                Some(old) if old.state != State::Stop => continue,
-                _ => {
-                    self.channels[i] = Some(rustaphone);
-                    return Some(StopHandle { channel: i });
-                }
-            }
-        }
-
-        None
-    }
-
-    pub fn stop(&mut self, handle: StopHandle) -> bool {
-        if let Some(channel) = &mut self.channels[handle.channel] {
-            channel.stop();
-        }
-        self.is_done()
-    }
-
-    pub fn is_done(&self) -> bool {
-        self.channels.iter().all(|channel| {
-            if let Some(channel) = channel {
-                channel.is_done()
-            } else {
-                true
-            }
-        })
-    }
-
-    pub fn synth(&mut self, sample_rate: usize, buffer: &mut [f32]) {
-        for i in 0..buffer.len() {
-            let mut allsample = 0.0;
-
-            // TODO: rename `bi` to `channel`
-            for bi in 0..MAX_CHANNELS {
-                let mut moreframes = 0;
-
-                let Some(b) = &mut self.channels[bi] else {
-                    continue;
-                };
-
-                for t in 0..MAX_TRACKS {
-                    let Some(a) = &mut b.voices[t] else {
-                        continue;
-                    };
-
-                    let Some(track) = a.track.clone() else {
-                        continue;
-                    };
-                    let track = track.lock().unwrap();
-
-                    if !track.notes.is_empty() {
-                        if a.frames == a.nextnote[0] {
-                            if a.nextnote[1] < track.nlen {
-                                let note = &track.notes[a.nextnote[1] as usize];
-                                let mut freq = a.params.freq;
-                                if note.tone as char != 'n' {
-                                    freq = note.freq();
-                                }
-                                if freq == 0.0 {
-                                    a.period = 0.0;
-                                    a.state = State::Stop;
-                                } else {
-                                    let note = &track.notes[a.nextnote[1] as usize];
-                                    for fx in &note.fx {
-                                        match fx.command {
-                                            FxCommand::Volume => fx!(fx, a, volume),
-                                            FxCommand::Punch => fx!(fx, a, punch),
-                                            FxCommand::Attack => fx!(fx, a, attack),
-                                            FxCommand::Sustain => fx!(fx, a, sustain),
-                                            FxCommand::Decay => fx!(fx, a, decay),
-                                            FxCommand::Square => fx!(fx, a, square),
-                                            FxCommand::Sweep => fx!(fx, a, sweep),
-                                            FxCommand::Vibe => fx!(fx, a, vibe),
-                                            FxCommand::VSpeed => fx!(fx, a, vspeed),
-                                            FxCommand::VDelay => fx!(fx, a, vdelay),
-                                            FxCommand::Lpf => fx!(fx, a, lpf),
-                                            FxCommand::LSweep => fx!(fx, a, lsweep),
-                                            FxCommand::Resonance => fx!(fx, a, resonance),
-                                            FxCommand::Hpf => fx!(fx, a, hpf),
-                                            FxCommand::HSweep => fx!(fx, a, hsweep),
-                                            FxCommand::Arp => fx!(fx, a, arp),
-                                            FxCommand::ASpeed => fx!(fx, a, aspeed),
-                                            FxCommand::Phase => fx!(fx, a, phase),
-                                            FxCommand::PSweep => fx!(fx, a, psweep),
-                                            FxCommand::Repeat => fx!(fx, a, repeat),
-                                        }
-                                    }
-
-                                    a.reset();
-                                    a.start();
-                                    a.period = 100.0 / (freq * freq + 0.001) as f64;
-                                }
-
-                                a.nextnote[0] += (sample_rate as f32 / (b.tempo as f32 / 60.0)
-                                    * (4.0 / note.duration as f32))
-                                    as i32;
-                            }
-
-                            a.nextnote[1] += 1;
-                        }
-                        if a.nextnote[1] <= track.nlen {
-                            moreframes += 1;
-                        }
-                    } else {
-                        moreframes += 1;
-                    }
-
-                    a.frames += 1;
-
-                    if a.state == State::Stop {
-                        continue;
-                    }
-
-                    a.repeat += 1;
-                    if a.limit != 0 && a.repeat >= a.limit {
-                        a.repeat = 0;
-                        a.reset();
-                    }
-
-                    a.atime += 1;
-                    if a.alimit != 0 && a.atime >= a.alimit {
-                        a.alimit = 0;
-                        a.period *= a.arp;
-                    }
-
-                    a.slide += a.dslide;
-                    a.period *= a.slide;
-                    if a.period > a.maxperiod {
-                        a.period = a.maxperiod;
-                        if a.params.limit > 0.0 {
-                            a.state = State::Stop;
-                        }
-                    }
-
-                    let mut rfperiod = a.period as f32;
-                    if a.vdelay > 0.0 {
-                        a.vibe += a.vspeed;
-                        rfperiod = a.period as f32 * (1.0 + f32::sin(a.vibe) * a.vdelay);
-                    }
-
-                    let mut period = rfperiod as i32;
-                    if period < 8 {
-                        period = 8;
-                    }
-                    a.square += a.sweep;
-                    if a.square < 0.0 {
-                        a.square = 0.0;
-                    }
-                    if a.square > 0.5 {
-                        a.square = 0.5;
-                    }
-
-                    a.time += 1;
-                    while a.time >= a.length[a.stage as usize] {
-                        a.time = 0;
-                        a.stage += 1;
-                        if a.stage == 3 {
-                            a.state = State::Stop;
-                        }
-                    }
-
-                    match a.stage {
-                        0 => {
-                            a.volume = a.time as f32 / a.length[0] as f32;
-                        }
-                        1 => {
-                            a.volume = 1.0
-                                + (1.0 - a.time as f32 / a.length[1] as f32) * 2.0 * a.params.punch;
-                        }
-                        2 => {
-                            a.volume = 1.0 - a.time as f32 / a.length[2] as f32;
-                        }
-                        _ => {}
-                    }
-
-                    a.fphase += a.dphase;
-                    a.iphase = (a.fphase as i32).abs();
-                    if a.iphase > 1023 {
-                        a.iphase = 1023;
-                    }
-
-                    if a.filter[7] != 0.0 {
-                        a.filter[6] *= a.filter[7];
-                        if a.filter[6] < 0.00001 {
-                            a.filter[6] = 0.00001;
-                        }
-                        if a.filter[6] > 0.1 {
-                            a.filter[6] = 0.1;
-                        }
-                    }
-
-                    let mut ssample = 0.0;
-                    for _ in 0..8 {
-                        a.phase += 1;
-                        if a.phase >= period {
-                            a.phase %= period;
-                            if a.params.r#type == Waveform::Noise {
-                                for i in 0..32 {
-                                    a.noise[i] = rand::random::<f32>() * 2.0 - 1.0;
-                                    // TODO: verify this is actually the same as the C version.
-                                    // TODO: Init array without loop as above.
-                                }
-                            }
-                        }
-
-                        let fp = a.phase as f32 / period as f32;
-                        let mut sample = match a.params.r#type {
-                            Waveform::Square => {
-                                if fp < a.square {
-                                    0.5
-                                } else {
-                                    -0.5
-                                }
-                            }
-                            Waveform::Sawtooth => 1.0 - fp * 2.0,
-                            Waveform::Sine => f32::sin(fp * 2.0 * core::f32::consts::PI),
-                            Waveform::Noise => a.noise[(a.phase * 32 / period) as usize],
-                        };
-
-                        let pp = a.filter[0];
-                        a.filter[2] *= a.filter[3];
-                        if a.filter[2] < 0.0 {
-                            a.filter[2] = 0.0;
-                        }
-                        if a.filter[2] > 0.1 {
-                            a.filter[2] = 0.1;
-                        }
-                        if a.params.lpf != 1.0 {
-                            a.filter[1] += (sample - a.filter[0]) * a.filter[2];
-                            a.filter[1] -= a.filter[1] * a.filter[4];
-                        } else {
-                            a.filter[0] = sample;
-                            a.filter[1] = 0.0;
-                        }
-                        a.filter[0] += a.filter[1];
-
-                        a.filter[5] += a.filter[0] - pp;
-                        a.filter[5] -= a.filter[5] * a.filter[6];
-                        sample = a.filter[5];
-
-                        a.phaser.0[(a.phasex & 1023) as usize] = sample;
-                        sample += a.phaser.0[((a.phasex - a.iphase + 1024) & 1023) as usize];
-                        a.phasex = (a.phasex + 1) & 1023;
-
-                        ssample += sample * a.volume;
-                    }
-                    ssample = ssample / 8.0 * b.volume;
-                    ssample *= 2.0 * a.params.volume;
-
-                    if ssample > 1.0 {
-                        ssample = 1.0;
-                    }
-                    if ssample < -1.0 {
-                        ssample = -1.0;
-                    }
-                    allsample += ssample;
-                }
-                if moreframes == 0 {
-                    b.state = State::Stop;
-                }
-            }
-
-            buffer[i] = allsample;
-        }
     }
 }

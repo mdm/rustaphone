@@ -236,7 +236,7 @@ fn note(input: &str) -> IResult<&str, RawNote> {
     Ok((input, note))
 }
 
-fn track(input: &str) -> IResult<&str, Vec<Note>> {
+pub fn tune(input: &str) -> IResult<&str, Vec<Note>> {
     let mut current_oct = 4;
     let mut current_len = 4;
     let mut notes = Vec::new();
