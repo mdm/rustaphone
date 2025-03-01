@@ -74,7 +74,7 @@ impl Mixer {
         })
     }
 
-    pub fn synth(&mut self, sample_rate: usize, buffer: &mut [f32]) {
+    pub fn synth(&mut self, sample_rate: u32, buffer: &mut [f32]) {
         for sample in buffer {
             let mut allsample = 0.0;
 

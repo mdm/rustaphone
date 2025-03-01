@@ -149,7 +149,7 @@ pub(super) struct Note {
 
 impl Note {
     fn freq(&self) -> f32 {
-        match self.tone as char {
+        match self.tone {
             'A' =>
             // A
             {
@@ -493,7 +493,7 @@ impl Rustaphone {
         }
     }
 
-    pub fn synth(&mut self, sample_rate: usize, allsample: &mut f32) {
+    pub fn synth(&mut self, sample_rate: u32, allsample: &mut f32) {
         let mut moreframes = 0;
 
         for t in 0..MAX_TRACKS {
@@ -510,7 +510,7 @@ impl Rustaphone {
                     if a.nextnote[1] < track.notes.len() as i32 {
                         let note = &track.notes[a.nextnote[1] as usize];
                         let mut freq = a.params.freq;
-                        if note.tone as char != 'n' {
+                        if note.tone != 'n' {
                             freq = note.freq();
                         }
                         if freq == 0.0 {
@@ -600,12 +600,7 @@ impl Rustaphone {
                 period = 8;
             }
             a.square += a.sweep;
-            if a.square < 0.0 {
-                a.square = 0.0;
-            }
-            if a.square > 0.5 {
-                a.square = 0.5;
-            }
+            a.square = a.square.clamp(0.0, 0.5);
 
             a.time += 1;
             while a.time >= a.length[a.stage as usize] {
@@ -638,12 +633,7 @@ impl Rustaphone {
 
             if a.filter[7] != 0.0 {
                 a.filter[6] *= a.filter[7];
-                if a.filter[6] < 0.00001 {
-                    a.filter[6] = 0.00001;
-                }
-                if a.filter[6] > 0.1 {
-                    a.filter[6] = 0.1;
-                }
+                a.filter[6] = a.filter[6].clamp(0.00001, 0.1);
             }
 
             let mut ssample = 0.0;
@@ -676,12 +666,7 @@ impl Rustaphone {
 
                 let pp = a.filter[0];
                 a.filter[2] *= a.filter[3];
-                if a.filter[2] < 0.0 {
-                    a.filter[2] = 0.0;
-                }
-                if a.filter[2] > 0.1 {
-                    a.filter[2] = 0.1;
-                }
+                a.filter[2] = a.filter[2].clamp(0.0, 0.1);
                 if a.params.lpf != 1.0 {
                     a.filter[1] += (sample - a.filter[0]) * a.filter[2];
                     a.filter[1] -= a.filter[1] * a.filter[4];
@@ -704,12 +689,7 @@ impl Rustaphone {
             ssample = ssample / 8.0 * self.volume;
             ssample *= 2.0 * a.params.volume;
 
-            if ssample > 1.0 {
-                ssample = 1.0;
-            }
-            if ssample < -1.0 {
-                ssample = -1.0;
-            }
+            ssample = ssample.clamp(-1.0, 1.0);
             *allsample += ssample;
         }
 
