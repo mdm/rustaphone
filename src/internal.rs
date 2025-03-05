@@ -1,7 +1,7 @@
 mod notation;
 
 const HI_OCTAVE: u8 = 8;
-const MAX_TRACKS: usize = 64;
+const MAX_TRACKS: usize = 4;
 
 const UNUSED_VOICE: Option<Voice> = None;
 
@@ -608,6 +608,7 @@ impl Rustaphone {
                 a.stage += 1;
                 if a.stage == 3 {
                     a.state = State::Stop;
+                    break; // TODO: is this correct?
                 }
             }
 

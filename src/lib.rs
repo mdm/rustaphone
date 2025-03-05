@@ -1,6 +1,6 @@
 mod internal;
 
-const MAX_CHANNELS: usize = 64;
+const MAX_CHANNELS: usize = 8;
 const UNUSED_CHANNEL: Option<Rustaphone> = None;
 
 pub struct Rustaphone {
@@ -12,6 +12,10 @@ impl Rustaphone {
         Rustaphone {
             internal: internal::Rustaphone::new(120, 0.10),
         }
+    }
+
+    pub fn tempo(&mut self, tempo: i32) {
+        self.internal.tempo(tempo);
     }
 
     pub fn add_track(&mut self, instrument: Instrument, tune: &str) {

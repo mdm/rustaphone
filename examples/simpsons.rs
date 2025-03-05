@@ -1,7 +1,13 @@
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use std::{thread, time::Duration};
+
+use cpal::{
+    traits::{DeviceTrait, HostTrait, StreamTrait},
+    SampleRate, StreamConfig,
+};
 use rustaphone::{Instrument, Mixer, Rustaphone, Waveform};
 
 fn main() {
+    println!("Creating instrument...");
     let melodious = Instrument::builder()
         .with_waveform(Waveform::Square)
         .with_punch(0.5)
@@ -14,9 +20,15 @@ fn main() {
         .with_psweep(0.2)
         .build();
 
+    println!("Creating Rustaphone...");
     let mut simpsons = Rustaphone::new();
+    simpsons.tempo(240);
+    println!("Adding track...");
     simpsons.add_track(melodious, "32 + C E F# 8:A G E C - 8:A 8:F# 8:F# 8:F# 2:G");
+    // simpsons.add_track(melodious, "A A A");
+    println!("Track added!");
 
+    println!("size: {}", size_of::<Rustaphone>());
     let mut mixer = Mixer::new();
     mixer.play(simpsons);
 
@@ -32,8 +44,9 @@ fn main() {
     let supported_config = supported_configs_range
         .next()
         .expect("no supported config?!")
-        .with_max_sample_rate();
-    let config = supported_config.into();
+        .with_sample_rate(SampleRate(44100));
+    let config: StreamConfig = supported_config.into();
+    dbg!(&config.sample_rate.0, &config.channels);
     let stream = device
         .build_output_stream(
             &config,
@@ -45,4 +58,6 @@ fn main() {
         )
         .expect("error while building stream");
     stream.play().expect("error while playing stream");
+    thread::sleep(Duration::from_secs(10));
+    println!("Done");
 }
