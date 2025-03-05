@@ -12,7 +12,7 @@ pub(super) enum State {
     Play,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(super) enum FxCommand {
     Volume,
     Punch,
@@ -132,14 +132,14 @@ macro_rules! fx {
     }};
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(super) struct Fx {
     command: FxCommand,
     val: f32,
     r#mod: char,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(super) struct Note {
     tone: char,
     octave: u8,
